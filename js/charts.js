@@ -4,12 +4,12 @@
 const Charts = (() => {
 
     const CATEGORY_COLORS = {
-        'contas':      '#f97316',
-        'parcela':     '#eab308',
-        'assinatura':  '#14b8a6',
-        'fatura':      '#a855f7',
-        'futuro':      '#3b82f6',
-        'compras':     '#ec4899'
+        'contas':      '#c4864a',
+        'parcela':     '#98a1ae',
+        'assinatura':  '#6fa89f',
+        'fatura':      '#9b7fb5',
+        'futuro':      '#6e93bf',
+        'compras':     '#c4708a'
     };
 
     const CATEGORY_LABELS = {
@@ -56,9 +56,9 @@ const Charts = (() => {
             ctx.beginPath();
             ctx.arc(cx, cy, rOuter, 0, Math.PI * 2);
             ctx.arc(cx, cy, rInner, 0, Math.PI * 2, true);
-            ctx.fillStyle = 'rgba(255,255,255,0.04)';
+            ctx.fillStyle = 'rgba(243,239,230,0.04)';
             ctx.fill();
-            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.fillStyle = 'rgba(243,239,230,0.25)';
             ctx.font = '600 14px "Inter", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -94,12 +94,12 @@ const Charts = (() => {
             });
 
             /* centre label */
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 20px "Inter", sans-serif';
+            ctx.fillStyle = '#f3efe6';
+            ctx.font = '600 19px "IBM Plex Mono", monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(fmt(totalSpent * e), cx, cy - 10);
-            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.fillStyle = 'rgba(243,239,230,0.5)';
             ctx.font = '500 11px "Inter", sans-serif';
             ctx.fillText('Total Gasto', cx, cy + 12);
 
@@ -138,9 +138,9 @@ const Charts = (() => {
         if (!container) return;
 
         const bars = [
-            { label: 'Essencial',       sub: '50%', icon: '🏠', spent: totals.essentialSpent,  budget: totals.essentialBudget,  color: '#f97316', grad: 'linear-gradient(90deg,#f97316,#fb923c)' },
-            { label: 'Estilo de Vida',  sub: '30%', icon: '🎯', spent: totals.lifestyleSpent,  budget: totals.lifestyleBudget,  color: '#a855f7', grad: 'linear-gradient(90deg,#a855f7,#c084fc)' },
-            { label: 'Investimento',    sub: '20%', icon: '📈', spent: totals.investmentSpent, budget: totals.investmentBudget, color: '#06b6d4', grad: 'linear-gradient(90deg,#06b6d4,#22d3ee)' }
+            { label: 'Essencial',       sub: '50%', icon: '🏠', spent: totals.essentialSpent,  budget: totals.essentialBudget,  color: '#c4864a', grad: 'linear-gradient(90deg,#c4864a,#e3a53d)' },
+            { label: 'Estilo de Vida',  sub: '30%', icon: '🎯', spent: totals.lifestyleSpent,  budget: totals.lifestyleBudget,  color: '#9b7fb5', grad: 'linear-gradient(90deg,#9b7fb5,#b79bcb)' },
+            { label: 'Investimento',    sub: '20%', icon: '📈', spent: totals.investmentSpent, budget: totals.investmentBudget, color: '#4fb286', grad: 'linear-gradient(90deg,#4fb286,#7bd1a8)' }
         ];
 
         container.innerHTML = bars.map(b => {
@@ -164,7 +164,7 @@ const Charts = (() => {
                 </div>
                 <div class="budget-track">
                     <div class="budget-fill ${over ? 'over' : ''}"
-                         style="--tw:${Math.min(pct, 100)}%; background:${over ? 'linear-gradient(90deg,#ef4444,#f87171)' : b.grad}"></div>
+                         style="--tw:${Math.min(pct, 100)}%; background:${over ? 'linear-gradient(90deg,#c4573f,#e28368)' : b.grad}"</div>
                 </div>
                 <div class="budget-footer">
                     <span class="${over ? 'over' : ''}">${usedPct}% utilizado</span>
