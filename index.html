@@ -7,7 +7,7 @@
       name="description"
       content="Dashboard de Controle Financeiro Pessoal"
     />
-    <title>Lumora Finance</title>
+    <title>Flux Finance</title>
 
     <!-- Preconnect for Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,12 +18,19 @@
     />
 
     <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/login.css" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%2316181b'/><path d='M4 16 L9 10 L13 13 L20 5' stroke='%23e3a53d' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/><circle cx='20' cy='5' r='1.6' fill='%23ffcf7a'/></svg>"
     />
   </head>
-  <body>
+  <body class="app-loading">
+    <!-- Auth: SDK do Supabase carregado cedo; o guard de sessão roda
+         dentro de js/app.js (função boot), que também revela o conteúdo. -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/supabase-client.js"></script>
+    <script src="js/auth.js"></script>
+
     <!-- ========== NAVBAR ========== -->
     <header class="navbar">
       <div class="navbar-inner">
@@ -38,45 +45,29 @@
             </svg>
           </div>
           <div class="brand-text">
-            <h1>Lumora</h1>
+            <h1>Flux</h1>
             <p>Iluminamos sua vida financeira</p>
           </div>
         </div>
 
-        <div class="month-selector">
-          <button class="month-nav-btn" id="prev-month" title="Mês anterior">
-            ‹
-          </button>
-          <span class="month-display" id="month-display">Maio 2026</span>
-          <button class="month-nav-btn" id="next-month" title="Próximo mês">
-            ›
-          </button>
+        <div class="month-selector-wrap">
+          <div class="month-selector">
+            <button class="month-nav-btn" id="prev-month" title="Mês anterior">
+              ‹
+            </button>
+            <span class="month-display" id="month-display">Maio 2026</span>
+            <button class="month-nav-btn" id="next-month" title="Próximo mês">
+              ›
+            </button>
+          </div>
+          <div class="month-progress" id="month-progress" title="Dias decorridos no mês">
+            <div class="month-progress-fill" id="month-progress-fill"></div>
+          </div>
         </div>
 
         <div class="header-actions">
-          <button class="btn btn-upload" id="import-btn">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 15V4M12 4L7.5 8.5M12 4L16.5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M4 15V18.5C4 19.6 4.9 20.5 6 20.5H18C19.1 20.5 20 19.6 20 18.5V15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Importar Planilha
-          </button>
-          <button class="btn btn-download" id="download-btn">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 4V15M12 15L7.5 10.5M12 15L16.5 10.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M4 15V18.5C4 19.6 4.9 20.5 6 20.5H18C19.1 20.5 20 19.6 20 18.5V15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Exportar Planilha
-          </button>
+          <div id="user-menu"></div>
         </div>
-
-        <!-- Input oculto para seleção de arquivo -->
-        <input
-          type="file"
-          id="import-file-input"
-          accept=".xlsx,.xls,.csv"
-          style="display: none"
-        />
       </div>
     </header>
 
@@ -95,6 +86,7 @@
             <span class="card-label">Sobra Atual</span>
           </div>
           <div class="card-value hero-value" id="card-remaining">R$ 0,00</div>
+          <svg class="card-sparkline hero-sparkline" id="spark-remaining" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg>
           <p class="hero-caption">O que sobra depois da renda menos gastos e pendências deste mês.</p>
         </div>
 
@@ -110,6 +102,7 @@
               <span class="card-label">Renda Total</span>
               <div class="card-value" id="card-income">R$ 0,00</div>
             </div>
+            <svg class="card-sparkline stat-sparkline" id="spark-income" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
           </div>
           <div class="stat-row summary-card spent">
             <div class="card-icon stat-icon">
@@ -122,6 +115,7 @@
               <span class="card-label">Total Gasto</span>
               <div class="card-value" id="card-spent">R$ 0,00</div>
             </div>
+            <svg class="card-sparkline stat-sparkline" id="spark-spent" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
           </div>
           <div class="stat-row summary-card pending">
             <div class="card-icon stat-icon">
@@ -254,7 +248,7 @@
       <!-- ========== FOOTER ========== -->
       <footer class="app-footer">
         <div class="footer-content">
-          <span class="footer-brand">Lumora</span>
+          <span class="footer-brand">Flux</span>
           <span class="footer-separator">·</span>
           <span class="footer-version">v1.0</span>
           <span class="footer-separator">·</span>
@@ -432,75 +426,20 @@
       </div>
     </div>
 
-    <!-- ========== IMPORT MODAL ========== -->
-    <div class="modal-overlay" id="import-modal">
-      <div class="modal-content modal-md">
-        <div class="modal-header">
-          <h3 class="modal-title">Importar Planilha</h3>
-          <button class="modal-close" id="modal-close-import">×</button>
+    <!-- ========== LOGOUT CONFIRM MODAL ========== -->
+    <div class="modal-overlay" id="logout-modal">
+      <div class="modal-content modal-sm">
+        <div class="delete-modal-body">
+          <span class="delete-icon">🚪</span>
+          <h3 style="margin-bottom: 8px">Sair da conta</h3>
+          <p>
+            Tem certeza que deseja sair? Você vai precisar entrar novamente
+            para acessar seu painel.
+          </p>
         </div>
-
-        <!-- Totais encontrados -->
-        <div class="import-summary">
-          <div class="import-stat">
-            <span class="import-stat-icon">📋</span>
-            <span class="import-stat-value" id="import-tx-count">0</span>
-            <span class="import-stat-label">Transações</span>
-          </div>
-          <div class="import-stat-divider"></div>
-          <div class="import-stat">
-            <span class="import-stat-icon">💵</span>
-            <span class="import-stat-value" id="import-sal-count">0</span>
-            <span class="import-stat-label">Rendas</span>
-          </div>
-        </div>
-
-        <!-- Lista de abas/meses detectados (preenchida dinamicamente) -->
-        <div id="import-sheets-section" class="import-section-block">
-          <label class="import-section-label">Abas detectadas</label>
-          <div class="import-sheets-list" id="import-sheets-list"></div>
-        </div>
-
-        <!-- Mês destino (exibido apenas quando há UMA aba sem mês detectado) -->
-        <div id="import-month-section" class="import-section-block">
-          <label for="import-month-select" class="import-section-label"
-            >Importar para o mês</label
-          >
-          <select
-            class="filter-select import-month-select-wrapper"
-            id="import-month-select"
-          ></select>
-        </div>
-
-        <!-- Comportamento -->
-        <div class="form-group" style="margin-top: 16px">
-          <label class="import-section-label">Comportamento</label>
-          <div class="import-mode-options">
-            <label class="import-mode-option">
-              <input type="radio" name="import-mode" value="add" checked />
-              <div class="import-mode-text">
-                <strong>Adicionar</strong>
-                <small
-                  >Mantém os dados existentes e acrescenta os importados</small
-                >
-              </div>
-            </label>
-            <label class="import-mode-option">
-              <input type="radio" name="import-mode" value="replace" />
-              <div class="import-mode-text">
-                <strong>Substituir</strong>
-                <small
-                  >Apaga todos os dados do(s) mês(es) e substitui pelos
-                  importados</small
-                >
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div class="modal-actions" style="margin-top: 24px">
-          <button class="btn btn-secondary" id="import-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="import-confirm">Importar</button>
+        <div class="modal-actions" style="justify-content: center">
+          <button class="btn btn-secondary" id="logout-cancel">Cancelar</button>
+          <button class="btn btn-danger" id="logout-confirm">Sair</button>
         </div>
       </div>
     </div>

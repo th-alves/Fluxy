@@ -1,0 +1,334 @@
+/* ============================================
+   FLUX — Login (Splitscreen)
+   Reutiliza os design tokens de styles.css
+   ============================================ */
+
+.auth-body {
+  overflow: hidden;
+}
+.auth-body::before {
+  display: none; /* o painel de marca cuida da própria luz ambiente */
+}
+
+/* ---------- Auth gate (index.html) ---------- */
+.app-loading {
+  visibility: hidden;
+}
+
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+}
+
+/* ---------- LEFT: Brand panel ---------- */
+.auth-brand-panel {
+  position: relative;
+  background: var(--ink-soft);
+  border-right: 1px solid var(--hairline);
+  padding: 56px 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+.auth-brand-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 12% -8%, rgba(227, 165, 61, 0.16) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 45% at 100% 100%, rgba(91, 138, 176, 0.1) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.auth-brand-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(243, 239, 230, 0.02) 1px, transparent 1px);
+  background-size: 100% 42px;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.auth-brand-content {
+  position: relative;
+  z-index: 1;
+  max-width: 480px;
+  animation: riseIn 0.7s var(--ease) both;
+}
+
+.auth-brand-content .header-brand {
+  margin-bottom: 64px;
+}
+
+.auth-brand-headline {
+  font-family: var(--f-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  line-height: 1.22;
+  color: var(--paper);
+  margin-bottom: 20px;
+}
+
+.auth-brand-headline em {
+  color: var(--gold-bright);
+  font-style: italic;
+}
+
+.auth-brand-sub {
+  font-size: 0.98rem;
+  color: var(--paper-dim);
+  line-height: 1.65;
+  max-width: 420px;
+  margin-bottom: 40px;
+}
+
+.auth-brand-features {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.auth-brand-features li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.88rem;
+  color: var(--paper-dim);
+}
+
+.auth-feature-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--gold-dim);
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-feature-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.auth-brand-footer {
+  position: relative;
+  z-index: 1;
+  font-size: 0.76rem;
+  color: var(--paper-faint);
+}
+
+/* ---------- RIGHT: Form panel ---------- */
+.auth-form-panel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: var(--ink);
+}
+
+.auth-form-card {
+  width: 100%;
+  max-width: 380px;
+  animation: riseIn 0.7s 0.08s var(--ease) both;
+}
+
+.auth-form-header {
+  margin-bottom: 32px;
+  text-align: left;
+}
+
+.auth-form-header h2 {
+  font-family: var(--f-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 1.9rem;
+  color: var(--paper);
+  margin-bottom: 10px;
+}
+
+.auth-form-header p {
+  font-size: 0.9rem;
+  color: var(--paper-dim);
+  line-height: 1.55;
+}
+
+.auth-error {
+  display: none;
+  font-size: 0.82rem;
+  color: var(--coral-bright);
+  background: rgba(196, 87, 63, 0.1);
+  border: 1px solid rgba(196, 87, 63, 0.28);
+  border-radius: var(--r-sm);
+  padding: 11px 14px;
+  margin-bottom: 18px;
+}
+
+.auth-error.active {
+  display: block;
+  animation: shake 0.4s var(--ease);
+}
+
+.btn-google {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline-strong);
+  background: var(--paper);
+  color: #1c1e22;
+  font-family: var(--f-body);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--fast), box-shadow var(--fast), background var(--fast);
+}
+
+.btn-google:hover {
+  background: #fffdf9;
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-1px);
+}
+
+.btn-google:active {
+  transform: scale(0.98);
+}
+
+.btn-google:disabled {
+  opacity: 0.7;
+  cursor: default;
+  transform: none;
+}
+
+.google-icon {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+}
+
+.auth-terms {
+  margin-top: 22px;
+  font-size: 0.74rem;
+  color: var(--paper-faint);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ---------- User menu (navbar, index.html) ---------- */
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface);
+}
+
+.user-menu-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--gold-dim);
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--f-body);
+  font-weight: 700;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.user-menu-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-menu-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--paper-dim);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-logout {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--paper-faint);
+  cursor: pointer;
+  transition: var(--fast);
+}
+
+.user-menu-logout:hover {
+  background: rgba(196, 87, 63, 0.14);
+  color: var(--coral-bright);
+}
+
+.user-menu-logout svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .auth-screen {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .auth-brand-panel {
+    padding: 40px 28px;
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .auth-brand-content .header-brand {
+    margin-bottom: 28px;
+  }
+
+  .auth-brand-sub,
+  .auth-brand-features {
+    display: none;
+  }
+
+  .auth-brand-headline {
+    font-size: 1.5rem;
+    margin-bottom: 0;
+  }
+
+  .auth-brand-footer {
+    display: none;
+  }
+
+  .auth-form-panel {
+    padding: 32px 24px 48px;
+  }
+}
+
+@media (max-width: 480px) {
+  .user-menu-name {
+    display: none;
+  }
+}

@@ -1,5 +1,5 @@
 /* ============================================
-   LUMORA — Design System
+   FLUX — Design System
    "A luz da sua vida financeira"
    Obsidian surface + warm gold signature light.
    Serif display (Fraunces) for brand voice,
@@ -25,7 +25,7 @@
   --paper-dim: rgba(243, 239, 230, 0.58);
   --paper-faint: rgba(243, 239, 230, 0.32);
 
-  /* Signature accent — the "light" in Lumora */
+  /* Signature accent — the "light" in Flux */
   --gold: #e3a53d;
   --gold-bright: #ffcf7a;
   --gold-dim: rgba(227, 165, 61, 0.14);
@@ -273,6 +273,13 @@ body::after {
 }
 
 /* Month selector */
+.month-selector-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
 .month-selector {
   display: flex;
   align-items: center;
@@ -281,6 +288,24 @@ body::after {
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
   padding: 6px 8px;
+}
+
+/* Days-elapsed indicator — a quiet second signal under the month
+   selector, only meaningful for the current month; past/future
+   months read as full or empty instead of a live countdown. */
+.month-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.month-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--gold);
+  border-radius: 999px;
+  transition: width var(--med);
 }
 
 .month-nav-btn {
@@ -658,7 +683,14 @@ body::after {
   padding: 26px 28px 28px;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
   animation-delay: 0.05s;
+}
+
+.overview-hero .card-top {
+  justify-content: center;
+  gap: 10px;
 }
 
 .hero-eyebrow {
@@ -672,9 +704,9 @@ body::after {
 }
 
 .hero-value {
-  font-size: 2.75rem;
+  font-size: 3.1rem;
   font-weight: 500;
-  margin-top: 4px;
+  margin-top: 10px;
   letter-spacing: -0.02em;
 }
 
@@ -866,6 +898,53 @@ body::after {
 }
 .summary-card.pending .card-value {
   color: var(--sapphire-bright);
+}
+
+/* ---------- Trend sparklines — last 6 months, quiet by design ---------- */
+.card-sparkline {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.card-sparkline polyline {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.card-sparkline circle {
+  vector-effect: non-scaling-stroke;
+}
+
+.hero-sparkline {
+  height: 28px;
+  margin-top: 14px;
+}
+
+.stat-sparkline {
+  width: 72px;
+  height: 24px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.summary-card.income .card-sparkline polyline,
+.summary-card.income .card-sparkline circle {
+  stroke: var(--emerald-bright);
+  fill: var(--emerald-bright);
+}
+.summary-card.spent .card-sparkline polyline,
+.summary-card.spent .card-sparkline circle {
+  stroke: var(--coral-bright);
+  fill: var(--coral-bright);
+}
+.summary-card.remaining .card-sparkline polyline,
+.summary-card.remaining .card-sparkline circle {
+  stroke: var(--gold-bright);
+  fill: var(--gold-bright);
 }
 
 /* ============================
@@ -2023,7 +2102,7 @@ input[type="date"] {
   }
 
   .hero-value {
-    font-size: 2.1rem;
+    font-size: 2.35rem;
   }
 
   .stat-row {
@@ -2312,7 +2391,7 @@ input[type="date"] {
   }
 
   .hero-value {
-    font-size: 1.85rem;
+    font-size: 2.05rem;
   }
 
   .hero-caption {
@@ -2354,12 +2433,6 @@ input[type="date"] {
 
   .stat-copy .card-value {
     font-size: 1rem;
-  }
-
-  .stat-copy {
-    margin-left: auto;
-    align-items: flex-end;
-    text-align: right;
   }
 
   .brand-icon {

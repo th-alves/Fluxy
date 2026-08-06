@@ -110,7 +110,7 @@ const ImportModule = (() => {
     }
 
     /**
-     * Infere monthKey a partir do título do Lumora exportado.
+     * Infere monthKey a partir do título do Flux exportado.
      * Ex: "Controle Financeiro — Maio 2026" → "2026-05"
      */
     function monthFromTitle(titleStr) {
@@ -125,9 +125,9 @@ const ImportModule = (() => {
         return null;
     }
 
-    /* ---------- Parser: formato exportado pelo Lumora ---------- */
+    /* ---------- Parser: formato exportado pelo Flux ---------- */
 
-    function parseLumora(rows) {
+    function parseFlux(rows) {
         let detectedMonthKey = null;
         let salaries    = [];
         let transactions = [];
@@ -283,12 +283,12 @@ const ImportModule = (() => {
         const firstSheet = wb.Sheets[wb.SheetNames[0]];
         const firstRows  = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
 
-        /* Formato Lumora: título na primeira célula ou seção "TRANSAÇÕES" presente */
+        /* Formato Flux: título na primeira célula ou seção "TRANSAÇÕES" presente */
         const firstCell  = String(firstRows[0]?.[0] ?? '');
         const hasSection = firstRows.some(r => String(r?.[0] ?? '').trim() === 'TRANSAÇÕES');
 
         if (firstCell.includes('Controle Financeiro') || hasSection) {
-            return parseLumora(firstRows);
+            return parseFlux(firstRows);
         }
 
         /* Formato genérico: processa TODAS as abas */
@@ -349,26 +349,17 @@ const ImportModule = (() => {
      * Confirma a importação de todos os grupos pendentes.
      * mode: 'add' (acrescenta) | 'replace' (apaga e substitui)
      */
-    function confirmImport(mode) {
+    async function confirmImport(mode) {
         if (!_pending || _pending.length === 0) return false;
 
         for (const group of _pending) {
             const monthKey = group.detectedMonthKey;
-            const md = Storage.getMonthData(monthKey);
 
             if (mode === 'replace') {
-                md.salaries     = [];
-                md.transactions = [];
+                await Storage.clearMonth(monthKey);
             }
 
-            group.salaries.forEach(s => {
-                md.salaries.push({ ...s, id: Storage.generateId() });
-            });
-            group.transactions.forEach(tx => {
-                md.transactions.push({ ...tx, id: Storage.generateId() });
-            });
-
-            Storage.saveMonthData(monthKey, md);
+            await Storage.bulkAdd(monthKey, group.salaries, group.transactions);
         }
 
         _pending = null;

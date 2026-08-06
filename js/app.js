@@ -5,6 +5,7 @@ const App = (() => {
 
     /* ---------- State ---------- */
     let currentMonthKey = Storage.getCurrentMonthKey();
+    let currentMonthData = { salaries: [], transactions: [] }; // cache do mês atual (evita refetch a cada clique)
     let editingTransactionId = null;
     let deletingType = null;   // 'transaction' | 'salary'
     let deletingId = null;
@@ -225,17 +226,110 @@ const App = (() => {
     }
 
     /* ============================
+       RENDER — Month progress bar
+       Shows how much of the selected month has elapsed. Past months
+       read as full, future months as empty, current month tracks
+       today's date.
+       ============================ */
+    function renderMonthProgress(monthKey) {
+        const fill = $('month-progress-fill');
+        if (!fill) return;
+
+        const { year, month } = Storage.parseMonthKey(monthKey);
+        const today = new Date();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        let pct;
+        if (year === today.getFullYear() && month === today.getMonth()) {
+            pct = (today.getDate() / daysInMonth) * 100;
+        } else {
+            const isPast = year < today.getFullYear() ||
+                (year === today.getFullYear() && month < today.getMonth());
+            pct = isPast ? 100 : 0;
+        }
+
+        fill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    }
+
+    /* ============================
+       RENDER — Trend sparklines
+       Pulls the 6 months up to and including the selected one and
+       draws a quiet line + endpoint dot per metric. Months with no
+       data at all are skipped so an empty history doesn't render as
+       a flat zero line.
+       ============================ */
+    function buildSparklinePoints(values) {
+        if (values.length < 2) return null;
+
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const span = max - min || 1;
+        const stepX = 100 / (values.length - 1);
+        const padY = 3;
+        const usableH = 24 - padY * 2;
+
+        return values.map((v, i) => {
+            const x = i * stepX;
+            const y = padY + usableH - ((v - min) / span) * usableH;
+            return [x, y];
+        });
+    }
+
+    function paintSparkline(svgId, points) {
+        const svg = $(svgId);
+        if (!svg) return;
+
+        if (!points) {
+            svg.innerHTML = '';
+            return;
+        }
+
+        const linePoints = points.map(p => p.join(',')).join(' ');
+        const [lastX, lastY] = points[points.length - 1];
+        svg.innerHTML = `
+            <polyline points="${linePoints}"></polyline>
+            <circle cx="${lastX}" cy="${lastY}" r="2.4"></circle>
+        `;
+    }
+
+    async function renderSparklines(monthKey) {
+        /* Walk 6 months back (including current) */
+        const keys = [];
+        let k = monthKey;
+        for (let i = 0; i < 6; i++) {
+            keys.unshift(k);
+            k = Storage.navigateMonth(k, -1);
+        }
+
+        const allData = (await Storage.getAllData()).months || {};
+        const series = keys
+            .filter(key => allData[key])
+            .map(key => Storage.calculateTotals(allData[key]));
+
+        const incomeVals = series.map(t => t.totalIncome);
+        const spentVals = series.map(t => t.totalSpent);
+        const remainingVals = series.map(t => t.remaining);
+
+        paintSparkline('spark-income', buildSparklinePoints(incomeVals));
+        paintSparkline('spark-spent', buildSparklinePoints(spentVals));
+        paintSparkline('spark-remaining', buildSparklinePoints(remainingVals));
+    }
+
+    /* ============================
        RENDER — Full refresh
        ============================ */
-    function renderAll() {
-        const monthData = Storage.getMonthData(currentMonthKey);
+    async function renderAll() {
+        const monthData = await Storage.getMonthData(currentMonthKey);
+        currentMonthData = monthData;
         const totals = Storage.calculateTotals(monthData);
 
         /* Month display */
         $('month-display').textContent = Storage.getMonthName(currentMonthKey);
+        renderMonthProgress(currentMonthKey);
 
         /* Cards */
         renderSummary(totals);
+        await renderSparklines(currentMonthKey);
 
         /* Charts */
         Charts.renderDonut($('chart-donut'), totals.categoryBreakdown, totals.totalSpent);
@@ -263,9 +357,9 @@ const App = (() => {
         display.style.opacity = '0';
         display.style.transform = `translateX(${direction * -20}px)`;
 
-        setTimeout(() => {
+        setTimeout(async () => {
             currentMonthKey = Storage.navigateMonth(currentMonthKey, direction);
-            renderAll();
+            await renderAll();
 
             /* Slide in from opposite side */
             display.style.transform = `translateX(${direction * 20}px)`;
@@ -285,7 +379,7 @@ const App = (() => {
         openModal('salary-modal');
     }
 
-    function onSalarySubmit(e) {
+    async function onSalarySubmit(e) {
         e.preventDefault();
         const desc = $('salary-description').value.trim();
         const val  = parseCurrency($('salary-value').value);
@@ -293,7 +387,7 @@ const App = (() => {
 
         if (!desc || !val || !day) return;
 
-        Storage.addSalary(currentMonthKey, {
+        await Storage.addSalary(currentMonthKey, {
             description: desc,
             value: val,
             day: parseInt(day)
@@ -301,7 +395,7 @@ const App = (() => {
 
         closeModal('salary-modal');
         toast('Renda adicionada com sucesso!');
-        renderAll();
+        await renderAll();
     }
 
     /* -- Transaction modal -- */
@@ -319,8 +413,7 @@ const App = (() => {
     }
 
     function onEditTransaction(txId) {
-        const monthData = Storage.getMonthData(currentMonthKey);
-        const tx = monthData.transactions.find(t => t.id === txId);
+        const tx = currentMonthData.transactions.find(t => t.id === txId);
         if (!tx) return;
 
         editingTransactionId = txId;
@@ -338,7 +431,7 @@ const App = (() => {
         openModal('transaction-modal');
     }
 
-    function onTransactionSubmit(e) {
+    async function onTransactionSubmit(e) {
         e.preventDefault();
 
         const data = {
@@ -352,22 +445,21 @@ const App = (() => {
         };
 
         if (editingTransactionId) {
-            Storage.updateTransaction(currentMonthKey, editingTransactionId, data);
+            await Storage.updateTransaction(currentMonthKey, editingTransactionId, data);
             toast('Transação atualizada!');
         } else {
-            Storage.addTransaction(currentMonthKey, data);
+            await Storage.addTransaction(currentMonthKey, data);
             toast('Transação adicionada!');
         }
 
         closeModal('transaction-modal');
         editingTransactionId = null;
-        renderAll();
+        await renderAll();
     }
 
     /* -- Status toggle with visual feedback -- */
-    function onToggleStatus(txId) {
-        const monthData = Storage.getMonthData(currentMonthKey);
-        const tx = monthData.transactions.find(t => t.id === txId);
+    async function onToggleStatus(txId) {
+        const tx = currentMonthData.transactions.find(t => t.id === txId);
         if (!tx) return;
 
         /* Add visual pulse on the row */
@@ -381,9 +473,9 @@ const App = (() => {
         }
 
         const newStatus = tx.status === 'pago' ? 'pendente' : 'pago';
-        Storage.updateTransaction(currentMonthKey, txId, { status: newStatus });
+        await Storage.updateTransaction(currentMonthKey, txId, { status: newStatus });
         toast(newStatus === 'pago' ? 'Marcado como pago ✅' : 'Marcado como pendente ⏳', 'info');
-        renderAll();
+        await renderAll();
     }
 
     /* -- Delete flow -- */
@@ -393,31 +485,30 @@ const App = (() => {
         openModal('delete-modal');
     }
 
-    function onConfirmDelete() {
+    async function onConfirmDelete() {
         if (deletingType === 'transaction' && deletingId) {
-            Storage.deleteTransaction(currentMonthKey, deletingId);
+            await Storage.deleteTransaction(currentMonthKey, deletingId);
             toast('Transação excluída!', 'info');
         } else if (deletingType === 'salary' && deletingId) {
-            Storage.deleteSalary(currentMonthKey, deletingId);
+            await Storage.deleteSalary(currentMonthKey, deletingId);
             toast('Renda removida!', 'info');
         }
         deletingType = null;
         deletingId = null;
         closeModal('delete-modal');
-        renderAll();
+        await renderAll();
     }
 
     /* -- Filters -- */
     function onFilterChange() {
         filterCategory = $('filter-category').value;
         filterStatus = $('filter-status').value;
-        const monthData = Storage.getMonthData(currentMonthKey);
-        renderTransactions(monthData);
+        renderTransactions(currentMonthData);
     }
 
     /* -- Export -- */
     function onDownload() {
-        const monthData = Storage.getMonthData(currentMonthKey);
+        const monthData = currentMonthData;
         if (monthData.salaries.length === 0 && monthData.transactions.length === 0) {
             toast('Nenhum dado para exportar neste mês.', 'error');
             return;
@@ -509,7 +600,7 @@ const App = (() => {
         }
     }
 
-    function onImportConfirm() {
+    async function onImportConfirm() {
         const mode = document.querySelector('input[name="import-mode"]:checked').value;
 
         /* Se no modo mês único (fallback), ajusta o monthKey do grupo */
@@ -521,7 +612,7 @@ const App = (() => {
         /* Captura o mês da primeira aba ANTES de confirmImport limpar _pending */
         const navigateTo = ImportModule.getFirstMonthKey() || currentMonthKey;
 
-        const success = ImportModule.confirmImport(mode);
+        const success = await ImportModule.confirmImport(mode);
         if (!success) {
             toast('Nenhum dado para importar.', 'error');
             return;
@@ -529,7 +620,7 @@ const App = (() => {
 
         closeModal('import-modal');
         currentMonthKey = navigateTo;
-        renderAll();
+        await renderAll();
         toast('Dados importados com sucesso! 📤');
     }
 
@@ -539,26 +630,26 @@ const App = (() => {
     }
 
     /* -- Copy from last month -- */
-    function onCopyFromLastMonth() {
+    async function onCopyFromLastMonth() {
         const prevMonthKey = Storage.navigateMonth(currentMonthKey, -1);
-        const prevData = Storage.getMonthData(prevMonthKey);
+        const prevData = await Storage.getMonthData(prevMonthKey);
 
         if (prevData.transactions.length === 0) {
             toast(`Nenhuma transação encontrada em ${Storage.getMonthName(prevMonthKey)}.`, 'error');
             return;
         }
 
-        const currentData = Storage.getMonthData(currentMonthKey);
+        const currentData = currentMonthData;
         let copied = 0;
 
-        prevData.transactions.forEach(tx => {
+        for (const tx of prevData.transactions) {
             /* Check for duplicates by description + category + value */
             const alreadyExists = currentData.transactions.some(
                 t => t.description === tx.description
                   && t.category === tx.category
                   && Math.abs(parseFloat(t.value)) === Math.abs(parseFloat(tx.value))
             );
-            if (alreadyExists) return;
+            if (alreadyExists) continue;
 
             /* Copy with new ID, same date adjusted to current month, status reset to pendente */
             const { year, month } = Storage.parseMonthKey(currentMonthKey);
@@ -568,7 +659,7 @@ const App = (() => {
                 newDate = `${year}-${String(month + 1).padStart(2, '0')}-${day}`;
             }
 
-            Storage.addTransaction(currentMonthKey, {
+            await Storage.addTransaction(currentMonthKey, {
                 date: newDate,
                 category: tx.category,
                 description: tx.description,
@@ -578,7 +669,7 @@ const App = (() => {
                 status: 'pendente'
             });
             copied++;
-        });
+        }
 
         if (copied === 0) {
             toast('Todas as transações já existem neste mês.', 'info');
@@ -586,7 +677,7 @@ const App = (() => {
             toast(`${copied} transação(s) copiada(s) de ${Storage.getMonthName(prevMonthKey)}! ✅`);
         }
 
-        renderAll();
+        await renderAll();
     }
 
     /* ============================
@@ -636,21 +727,13 @@ const App = (() => {
     /* ============================
        INIT
        ============================ */
-    function init() {
+    async function init() {
         /* Wire up buttons */
         $('prev-month').addEventListener('click', onPrevMonth);
         $('next-month').addEventListener('click', onNextMonth);
         $('add-salary-btn').addEventListener('click', onAddSalary);
         $('add-transaction-btn').addEventListener('click', onAddTransaction);
         $('copy-last-month-btn').addEventListener('click', onCopyFromLastMonth);
-        $('download-btn').addEventListener('click', onDownload);
-
-        /* Import */
-        $('import-btn').addEventListener('click', onImportClick);
-        $('import-file-input').addEventListener('change', onImportFileSelected);
-        $('import-confirm').addEventListener('click', onImportConfirm);
-        $('import-cancel').addEventListener('click', onImportCancel);
-        $('modal-close-import').addEventListener('click', onImportCancel);
 
         /* Salary modal */
         $('salary-form').addEventListener('submit', onSalarySubmit);
@@ -684,25 +767,32 @@ const App = (() => {
             resizeTimer = setTimeout(() => {
                 if (window.innerWidth === _lastResizeW) return;
                 _lastResizeW = window.innerWidth;
-                const md = Storage.getMonthData(currentMonthKey);
-                const totals = Storage.calculateTotals(md);
+                const totals = Storage.calculateTotals(currentMonthData);
                 Charts.renderDonut($('chart-donut'), totals.categoryBreakdown, totals.totalSpent);
             }, 250);
         });
 
-        /* Initial render */
-        renderAll();
-
         /* Setup currency masks */
         setupCurrencyMask($('salary-value'));
         setupCurrencyMask($('field-value'));
+
+        /* Initial render */
+        await renderAll();
     }
 
-    /* Boot */
+    /* Boot — aguarda a sessão do Supabase estar confirmada (ver auth guard
+       no <body> do index.html) antes de buscar dados do usuário. */
+    async function boot() {
+        const session = await Auth.requireSession();
+        if (!session) return; // Auth.requireSession já redireciona pro login
+        await init();
+        document.body.classList.remove('app-loading');
+    }
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', boot);
     } else {
-        init();
+        boot();
     }
 
     return { renderAll, toast };
