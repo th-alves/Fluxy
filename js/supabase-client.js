@@ -8,15 +8,15 @@
    a "service_role key" nem o Client Secret do Google.
    ============================================ */
 
-const SUPABASE_URL = 'https://qfhvtpwkydskytnkooim.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_bp7l3swOHzoYb2sAWfbd2Q_U6W8uSR2';
+const SUPABASE_URL = 'https://kjwqkcfxhpgtbzjqwbbm.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_r69xrJYxv8Xyc7iKvNE4yQ_ruAfV8ap';
 
 const supabaseClient = (() => {
     if (typeof window.supabase === 'undefined') {
         console.error('SDK do Supabase não carregado. Verifique o <script> do supabase-js no HTML.');
         return null;
     }
-    if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === 'sb_publishable_bp7l3swOHzoYb2sAWfbd2Q_U6W8uSR2') {
+    if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === 'sb_publishable_r69xrJYxv8Xyc7iKvNE4yQ_ruAfV8ap') {
         console.warn('⚠️ Configure SUPABASE_ANON_KEY em js/supabase-client.js para habilitar o login.');
     }
     return window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
