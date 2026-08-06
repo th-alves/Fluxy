@@ -189,10 +189,15 @@ const Storage = (() => {
         return { months };
     }
 
-    /* ---------- Salary CRUD ---------- */
+    /* ---------- Salary CRUD ----------
+       Cada função retorna { ok, error } em vez de engolir o erro do
+       Supabase — quem chamar decide o que mostrar ao usuário. Antes
+       o erro só ia pro console.error e a UI seguia como se tivesse
+       dado tudo certo (por isso o toast de sucesso aparecia mesmo
+       quando nada era salvo). */
     async function addSalary(monthKey, salary) {
         const userId = await getUserId();
-        if (!userId) return;
+        if (!userId) return { ok: false, error: 'Usuário não autenticado.' };
         const { year, month } = parseMonthKey(monthKey);
         const day = Math.min(Math.max(parseInt(salary.day, 10) || 1, 1), 28);
         const vencimento = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -207,7 +212,8 @@ const Storage = (() => {
             status: 'pago',
             mes_referencia: `${year}-${String(month + 1).padStart(2, '0')}-01`
         });
-        if (error) console.error('Erro ao adicionar renda:', error);
+        if (error) { console.error('Erro ao adicionar renda:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
     }
 
     async function updateSalary(monthKey, salaryId, updates) {
@@ -219,18 +225,20 @@ const Storage = (() => {
             patch.vencimento = `${year}-${String(month + 1).padStart(2, '0')}-${String(updates.day).padStart(2, '0')}`;
         }
         const { error } = await supabaseClient.from('entries').update(patch).eq('id', salaryId);
-        if (error) console.error('Erro ao atualizar renda:', error);
+        if (error) { console.error('Erro ao atualizar renda:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
     }
 
     async function deleteSalary(_monthKey, salaryId) {
         const { error } = await supabaseClient.from('entries').delete().eq('id', salaryId);
-        if (error) console.error('Erro ao remover renda:', error);
+        if (error) { console.error('Erro ao remover renda:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
     }
 
     /* ---------- Transaction CRUD ---------- */
     async function addTransaction(monthKey, tx) {
         const userId = await getUserId();
-        if (!userId) return;
+        if (!userId) return { ok: false, error: 'Usuário não autenticado.' };
         await ensureCategories();
         const { year, month } = parseMonthKey(monthKey);
 
@@ -247,7 +255,8 @@ const Storage = (() => {
             status: tx.status,
             mes_referencia: `${year}-${String(month + 1).padStart(2, '0')}-01`
         });
-        if (error) console.error('Erro ao adicionar transação:', error);
+        if (error) { console.error('Erro ao adicionar transação:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
     }
 
     async function updateTransaction(_monthKey, txId, updates) {
@@ -262,12 +271,14 @@ const Storage = (() => {
         if (updates.status !== undefined) patch.status = updates.status;
 
         const { error } = await supabaseClient.from('entries').update(patch).eq('id', txId);
-        if (error) console.error('Erro ao atualizar transação:', error);
+        if (error) { console.error('Erro ao atualizar transação:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
     }
 
     async function deleteTransaction(_monthKey, txId) {
         const { error } = await supabaseClient.from('entries').delete().eq('id', txId);
-        if (error) console.error('Erro ao excluir transação:', error);
+        if (error) { console.error('Erro ao excluir transação:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
     }
 
     /* ---------- Bulk (usado na importação de planilha) ---------- */

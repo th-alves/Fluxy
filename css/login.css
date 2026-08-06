@@ -1,5 +1,5 @@
 /* ============================================
-   FLUX — Login (Splitscreen)
+   FLUXY — Login (Splitscreen)
    Reutiliza os design tokens de styles.css
    ============================================ */
 
@@ -64,7 +64,7 @@
 
 .auth-brand-headline {
   font-family: var(--f-display);
-  font-style: italic;
+  font-style: normal;
   font-weight: 600;
   font-size: clamp(1.9rem, 3vw, 2.6rem);
   line-height: 1.22;
@@ -74,7 +74,7 @@
 
 .auth-brand-headline em {
   color: var(--gold-bright);
-  font-style: italic;
+  font-style: normal;
 }
 
 .auth-brand-sub {
@@ -147,7 +147,7 @@
 
 .auth-form-header h2 {
   font-family: var(--f-display);
-  font-style: italic;
+  font-style: normal;
   font-weight: 600;
   font-size: 1.9rem;
   color: var(--paper);

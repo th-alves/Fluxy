@@ -11,6 +11,7 @@ const App = (() => {
     let deletingId = null;
     let filterCategory = '';
     let filterStatus = '';
+    let renderSeq = 0; // ver renderAll(): descarta respostas de rede que chegam fora de ordem
 
     /* ---------- Label maps ---------- */
     const CATEGORY_LABELS = {
@@ -117,25 +118,49 @@ const App = (() => {
        RENDER — Summary Cards
        ============================ */
     function renderSummary(totals) {
-        animateValue($('card-income'), totals.totalIncome);
-        animateValue($('card-spent'), totals.totalSpent);
-        animateValue($('card-remaining'), totals.remaining);
-        animateValue($('card-pending'), totals.totalPending);
+        scrambleText($('card-income'), fmt(totals.totalIncome));
+        scrambleText($('card-spent'), fmt(totals.totalSpent));
+        scrambleText($('card-remaining'), fmt(totals.remaining));
+        scrambleText($('card-pending'), fmt(totals.totalPending));
     }
 
-    function animateValue(el, target) {
-        const duration = 700;
+    /* ============================
+       "Text scramble" / "character scramble"
+       Embaralha os dígitos de um valor e vai "assentando" cada um,
+       da esquerda pra direita, até chegar no texto final. Símbolos
+       (R$, ., ,, -, espaço, %) ficam fixos — só os números embaralham.
+       Usado em qualquer valor monetário/numérico do site: cards de
+       resumo, linhas da tabela de transações e lista de salários.
+       Cada elemento guarda seu próprio requestAnimationFrame em
+       el._scrambleRAF pra cancelar uma animação anterior se um novo
+       valor chegar antes dela terminar (ex: trocar de mês rápido).
+       ============================ */
+    const SCRAMBLE_CHARS = '0123456789';
+
+    function scrambleText(el, finalText, duration = 500) {
+        if (!el) return;
+        if (el._scrambleRAF) cancelAnimationFrame(el._scrambleRAF);
+
+        const chars = finalText.split('');
+        const isDigit = c => c >= '0' && c <= '9';
         const start = performance.now();
-        const from = parseFloat(el.dataset.current || '0');
-        el.dataset.current = target;
 
         (function tick(now) {
             const p = Math.min((now - start) / duration, 1);
-            const eased = 1 - Math.pow(1 - p, 3);
-            const v = from + (target - from) * eased;
-            el.textContent = fmt(v);
-            if (p < 1) requestAnimationFrame(tick);
-            else el.textContent = fmt(target);
+            const lockedCount = Math.floor(p * chars.length);
+
+            el.textContent = chars.map((c, i) => {
+                if (!isDigit(c)) return c;
+                if (i < lockedCount) return c;
+                return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+            }).join('');
+
+            if (p < 1) {
+                el._scrambleRAF = requestAnimationFrame(tick);
+            } else {
+                el.textContent = finalText;
+                el._scrambleRAF = null;
+            }
         })(start);
     }
 
@@ -166,6 +191,9 @@ const App = (() => {
                 <button class="btn-icon delete" data-delete-salary="${s.id}" title="Remover">🗑️</button>
             </div>
         `).join('');
+
+        /* Dispara o scramble em cada valor recém-inserido */
+        list.querySelectorAll('.salary-value').forEach(el => scrambleText(el, el.textContent));
     }
 
     /* ============================
@@ -223,6 +251,9 @@ const App = (() => {
                 </td>
             </tr>`;
         }).join('');
+
+        /* Dispara o scramble em cada valor recém-inserido */
+        tbody.querySelectorAll('.value-display').forEach(el => scrambleText(el, el.textContent));
     }
 
     /* ============================
@@ -319,7 +350,17 @@ const App = (() => {
        RENDER — Full refresh
        ============================ */
     async function renderAll() {
+        /* Cada chamada carrega um "carimbo" — se outra navegação de mês
+           começar antes desta terminar (ex: cliques rápidos nas setas),
+           a chamada mais antiga se identifica como obsoleta nos pontos
+           abaixo e para de escrever na tela, em vez de sobrescrever os
+           dados do mês atual com uma resposta de rede desencontrada.
+           Isso era a causa dos valores errados ao trocar de mês. */
+        const seq = ++renderSeq;
+
         const monthData = await Storage.getMonthData(currentMonthKey);
+        if (seq !== renderSeq) return; // uma navegação mais nova já está em andamento
+
         currentMonthData = monthData;
         const totals = Storage.calculateTotals(monthData);
 
@@ -330,6 +371,7 @@ const App = (() => {
         /* Cards */
         renderSummary(totals);
         await renderSparklines(currentMonthKey);
+        if (seq !== renderSeq) return; // idem, após o segundo round-trip (sparklines)
 
         /* Charts */
         Charts.renderDonut($('chart-donut'), totals.categoryBreakdown, totals.totalSpent);
@@ -350,16 +392,26 @@ const App = (() => {
     /* -- Month navigation with slide animation -- */
     function animateMonthChange(direction) {
         const display = $('month-display');
-        const cards = $('summary-cards');
 
         /* Slide out */
         display.style.transition = 'opacity 0.15s, transform 0.15s';
         display.style.opacity = '0';
         display.style.transform = `translateX(${direction * -20}px)`;
 
-        setTimeout(async () => {
+        setTimeout(() => {
             currentMonthKey = Storage.navigateMonth(currentMonthKey, direction);
-            await renderAll();
+
+            /* Update the month name & progress bar right away — these
+               are pure local calculations, no network involved. The
+               rest of the page (cards, charts, transactions) still
+               depends on data from Supabase, so it's handed off to
+               renderAll() below without blocking this. Previously the
+               label swap happened *inside* renderAll(), stuck behind
+               two separate network round-trips (getMonthData + the
+               getAllData used for the sparklines), which is what made
+               the month name feel like it took forever to change. */
+            display.textContent = Storage.getMonthName(currentMonthKey);
+            renderMonthProgress(currentMonthKey);
 
             /* Slide in from opposite side */
             display.style.transform = `translateX(${direction * 20}px)`;
@@ -367,6 +419,8 @@ const App = (() => {
                 display.style.opacity = '1';
                 display.style.transform = 'translateX(0)';
             });
+
+            renderAll();
         }, 150);
     }
 
@@ -387,11 +441,16 @@ const App = (() => {
 
         if (!desc || !val || !day) return;
 
-        await Storage.addSalary(currentMonthKey, {
+        const result = await Storage.addSalary(currentMonthKey, {
             description: desc,
             value: val,
             day: parseInt(day)
         });
+
+        if (!result.ok) {
+            toast(`Erro ao salvar renda: ${result.error || 'tente novamente.'}`, 'error');
+            return;
+        }
 
         closeModal('salary-modal');
         toast('Renda adicionada com sucesso!');
@@ -444,14 +503,16 @@ const App = (() => {
             status:         $('field-status').value
         };
 
-        if (editingTransactionId) {
-            await Storage.updateTransaction(currentMonthKey, editingTransactionId, data);
-            toast('Transação atualizada!');
-        } else {
-            await Storage.addTransaction(currentMonthKey, data);
-            toast('Transação adicionada!');
+        const result = editingTransactionId
+            ? await Storage.updateTransaction(currentMonthKey, editingTransactionId, data)
+            : await Storage.addTransaction(currentMonthKey, data);
+
+        if (!result.ok) {
+            toast(`Erro ao salvar transação: ${result.error || 'tente novamente.'}`, 'error');
+            return; /* mantém o modal aberto para o usuário tentar de novo */
         }
 
+        toast(editingTransactionId ? 'Transação atualizada!' : 'Transação adicionada!');
         closeModal('transaction-modal');
         editingTransactionId = null;
         await renderAll();
@@ -473,7 +534,11 @@ const App = (() => {
         }
 
         const newStatus = tx.status === 'pago' ? 'pendente' : 'pago';
-        await Storage.updateTransaction(currentMonthKey, txId, { status: newStatus });
+        const result = await Storage.updateTransaction(currentMonthKey, txId, { status: newStatus });
+        if (!result.ok) {
+            toast(`Erro ao atualizar status: ${result.error || 'tente novamente.'}`, 'error');
+            return;
+        }
         toast(newStatus === 'pago' ? 'Marcado como pago ✅' : 'Marcado como pendente ⏳', 'info');
         await renderAll();
     }
@@ -486,12 +551,16 @@ const App = (() => {
     }
 
     async function onConfirmDelete() {
+        let result = null;
         if (deletingType === 'transaction' && deletingId) {
-            await Storage.deleteTransaction(currentMonthKey, deletingId);
-            toast('Transação excluída!', 'info');
+            result = await Storage.deleteTransaction(currentMonthKey, deletingId);
+            if (result.ok) toast('Transação excluída!', 'info');
         } else if (deletingType === 'salary' && deletingId) {
-            await Storage.deleteSalary(currentMonthKey, deletingId);
-            toast('Renda removida!', 'info');
+            result = await Storage.deleteSalary(currentMonthKey, deletingId);
+            if (result.ok) toast('Renda removida!', 'info');
+        }
+        if (result && !result.ok) {
+            toast(`Erro ao excluir: ${result.error || 'tente novamente.'}`, 'error');
         }
         deletingType = null;
         deletingId = null;
@@ -733,6 +802,7 @@ const App = (() => {
         $('next-month').addEventListener('click', onNextMonth);
         $('add-salary-btn').addEventListener('click', onAddSalary);
         $('add-transaction-btn').addEventListener('click', onAddTransaction);
+        $('fab-add-transaction').addEventListener('click', onAddTransaction);
         $('copy-last-month-btn').addEventListener('click', onCopyFromLastMonth);
 
         /* Salary modal */

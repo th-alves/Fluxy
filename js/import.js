@@ -110,7 +110,7 @@ const ImportModule = (() => {
     }
 
     /**
-     * Infere monthKey a partir do título do Flux exportado.
+     * Infere monthKey a partir do título do Fluxy exportado.
      * Ex: "Controle Financeiro — Maio 2026" → "2026-05"
      */
     function monthFromTitle(titleStr) {
@@ -125,9 +125,9 @@ const ImportModule = (() => {
         return null;
     }
 
-    /* ---------- Parser: formato exportado pelo Flux ---------- */
+    /* ---------- Parser: formato exportado pelo Fluxy ---------- */
 
-    function parseFlux(rows) {
+    function parseFluxy(rows) {
         let detectedMonthKey = null;
         let salaries    = [];
         let transactions = [];
@@ -283,12 +283,12 @@ const ImportModule = (() => {
         const firstSheet = wb.Sheets[wb.SheetNames[0]];
         const firstRows  = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
 
-        /* Formato Flux: título na primeira célula ou seção "TRANSAÇÕES" presente */
+        /* Formato Fluxy: título na primeira célula ou seção "TRANSAÇÕES" presente */
         const firstCell  = String(firstRows[0]?.[0] ?? '');
         const hasSection = firstRows.some(r => String(r?.[0] ?? '').trim() === 'TRANSAÇÕES');
 
         if (firstCell.includes('Controle Financeiro') || hasSection) {
-            return parseFlux(firstRows);
+            return parseFluxy(firstRows);
         }
 
         /* Formato genérico: processa TODAS as abas */

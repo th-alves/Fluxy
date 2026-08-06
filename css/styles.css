@@ -1,8 +1,8 @@
 /* ============================================
-   FLUX — Design System
+   FLUXY — Design System
    "A luz da sua vida financeira"
    Obsidian surface + warm gold signature light.
-   Serif display (Fraunces) for brand voice,
+   Sans display (Space Grotesk) for brand voice,
    Inter for UI, IBM Plex Mono for every number
    — because financial data reads like a ledger.
    ============================================ */
@@ -25,7 +25,7 @@
   --paper-dim: rgba(243, 239, 230, 0.58);
   --paper-faint: rgba(243, 239, 230, 0.32);
 
-  /* Signature accent — the "light" in Flux */
+  /* Signature accent — the "light" in Fluxy */
   --gold: #e3a53d;
   --gold-bright: #ffcf7a;
   --gold-dim: rgba(227, 165, 61, 0.14);
@@ -63,7 +63,7 @@
   --slow: 0.6s var(--ease);
 
   /* Type */
-  --f-display: "Fraunces", "Georgia", serif;
+  --f-display: "Space Grotesk", "Inter", sans-serif;
   --f-body:
     "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   --f-mono: "IBM Plex Mono", "SF Mono", monospace;
@@ -193,7 +193,7 @@ body::after {
   gap: 16px;
   flex-wrap: wrap;
   position: relative;
-  animation: riseIn 0.6s var(--ease) both;
+  animation: riseIn 0.6s var(--ease);
 }
 
 .header-brand {
@@ -258,10 +258,21 @@ body::after {
   font-family: var(--f-display);
   font-size: 1.65rem;
   font-weight: 600;
-  font-style: italic;
+  font-style: normal;
   color: var(--paper);
   letter-spacing: 0.2px;
   line-height: 1.15;
+}
+
+.brand-letter {
+  display: inline-block;
+  transition: opacity 0.4s var(--ease), transform 0.4s var(--ease), color 0.4s var(--ease);
+}
+
+.brand-letter.is-flipping {
+  opacity: 0.5;
+  transform: translateY(-3px);
+  color: var(--gold-bright);
 }
 
 .brand-text p {
@@ -671,7 +682,7 @@ body::after {
     box-shadow var(--med);
   position: relative;
   overflow: hidden;
-  animation: riseIn 0.55s var(--ease) both;
+  animation: riseIn 0.55s var(--ease);
   /* spotlight coordinates, driven by JS on pointer move */
   --mx: 50%;
   --my: 0%;
@@ -956,7 +967,7 @@ body::after {
   border-radius: var(--r-xl);
   padding: 26px 28px;
   margin-bottom: 22px;
-  animation: riseIn 0.55s var(--ease) both;
+  animation: riseIn 0.55s var(--ease);
 }
 
 .section-header {
@@ -972,7 +983,7 @@ body::after {
   font-family: var(--f-display);
   font-size: 1.2rem;
   font-weight: 600;
-  font-style: italic;
+  font-style: normal;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1015,7 +1026,7 @@ body::after {
   border: 1px solid var(--hairline);
   border-radius: var(--r-xl);
   padding: 26px 28px;
-  animation: riseIn 0.55s var(--ease) both;
+  animation: riseIn 0.55s var(--ease);
   display: flex;
   flex-direction: column;
   transition:
@@ -1369,10 +1380,15 @@ body::after {
   letter-spacing: 0.7px;
   border-bottom: 1px solid var(--hairline);
   white-space: nowrap;
-  position: sticky;
-  top: var(--nav-h);
+  /* NOTE: this header used to be `position: sticky` (pinned while
+     scrolling). Sticky positioning on <th> cells inside a table with
+     border-spacing renders incorrectly in real browsers — the header
+     shifts down and overlaps the second row even with zero scrolling.
+     Confirmed by isolating the rule in a standalone reproduction: the
+     row overlap disappears the instant sticky is removed, and nothing
+     else changes it. Reverted to a normal (non-sticky) header to keep
+     the table always rendering correctly. */
   background: var(--ink);
-  z-index: 2;
 }
 
 .data-table tbody tr {
@@ -1690,7 +1706,7 @@ input[type="date"] {
   font-family: var(--f-display);
   font-size: 1.3rem;
   font-weight: 600;
-  font-style: italic;
+  font-style: normal;
   color: var(--paper);
 }
 
@@ -1806,6 +1822,56 @@ input[type="date"] {
 }
 
 /* ============================
+   FAB — Nova Transação (mobile)
+   Some no desktop; a toolbar já tem o botão "Nova Transação" ali
+   perto da tabela. No mobile a tabela pode ficar comprida e rolar
+   até lá vira chato, então este botão fica fixo no canto da tela
+   o tempo todo. z-index abaixo do modal (1000) pra sumir sozinho
+   atrás do overlay quando o modal de transação abre.
+   ============================ */
+.fab-add-transaction {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .fab-add-transaction {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 18px;
+    bottom: 22px;
+    bottom: max(22px, calc(22px + env(safe-area-inset-bottom)));
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+    color: var(--gold-ink);
+    box-shadow: var(--shadow-gold), 0 6px 18px rgba(0, 0, 0, 0.35);
+    font-size: 1.9rem;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 900;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .fab-add-transaction span {
+    margin-top: -2px; /* centraliza o "+" visualmente */
+  }
+
+  .fab-add-transaction:active {
+    transform: scale(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fab-add-transaction {
+    transition: none;
+  }
+}
+
+/* ============================
    TOAST / NOTIFICATIONS
    ============================ */
 .toast-container {
@@ -1876,7 +1942,7 @@ input[type="date"] {
 .footer-brand {
   font-weight: 600;
   font-family: var(--f-display);
-  font-style: italic;
+  font-style: normal;
   color: var(--gold-bright);
 }
 
@@ -2067,10 +2133,6 @@ input[type="date"] {
 
   .header-brand {
     justify-content: center;
-  }
-
-  .data-table thead th {
-    top: 0;
   }
 
   .month-selector {

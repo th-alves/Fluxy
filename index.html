@@ -7,13 +7,13 @@
       name="description"
       content="Dashboard de Controle Financeiro Pessoal"
     />
-    <title>Flux Finance</title>
+    <title>Fluxy Finance</title>
 
     <!-- Preconnect for Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fraunces:ital,wght@0,500;0,600;0,700;1,500;1,600;1,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
 
@@ -45,7 +45,7 @@
             </svg>
           </div>
           <div class="brand-text">
-            <h1>Flux</h1>
+            <h1>Fluxy</h1>
             <p>Iluminamos sua vida financeira</p>
           </div>
         </div>
@@ -248,7 +248,7 @@
       <!-- ========== FOOTER ========== -->
       <footer class="app-footer">
         <div class="footer-content">
-          <span class="footer-brand">Flux</span>
+          <span class="footer-brand">Fluxy</span>
           <span class="footer-separator">·</span>
           <span class="footer-version">v1.0</span>
           <span class="footer-separator">·</span>
@@ -446,6 +446,13 @@
 
     <!-- ========== TOAST CONTAINER ========== -->
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- ========== FAB (mobile) — nova transação ========== -->
+    <!-- Só aparece em telas pequenas (ver css/styles.css); no desktop o
+         botão "Nova Transação" da toolbar já resolve. -->
+    <button class="fab-add-transaction" id="fab-add-transaction" title="Nova Transação" aria-label="Nova Transação">
+      <span>+</span>
+    </button>
 
     <!-- ========== SCRIPTS ========== -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
