@@ -125,5 +125,115 @@ const ExportModule = (() => {
         XLSX.writeFile(wb, filename);
     }
 
-    return { downloadSpreadsheet };
+    /* ---------- PDF ---------- */
+    function exportPDF(monthData, totals, monthKey, monthName) {
+        if (typeof window.jspdf === 'undefined') {
+            alert('Biblioteca de PDF não carregou. Verifique sua conexão com a internet e recarregue a página.');
+            return;
+        }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+        const marginX = 40;
+        let y = 50;
+
+        /* Cabeçalho */
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(24, 24, 24);
+        doc.text('Fluxy — Relatório Financeiro', marginX, y);
+        y += 20;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12);
+        doc.setTextColor(110, 110, 110);
+        doc.text(monthName, marginX, y);
+        y += 26;
+
+        /* Resumo */
+        doc.autoTable({
+            startY: y,
+            margin: { left: marginX, right: marginX },
+            body: [
+                ['Renda Total', fmt(totals.totalIncome)],
+                ['Total Gasto', fmt(totals.totalSpent)],
+                ['Pendente', fmt(totals.totalPending)],
+                ['Sobra Atual', fmt(totals.remaining)]
+            ],
+            theme: 'plain',
+            styles: { fontSize: 11, cellPadding: 4 },
+            columnStyles: {
+                0: { fontStyle: 'bold', textColor: [95, 95, 95] },
+                1: { halign: 'right', fontStyle: 'bold', textColor: [24, 24, 24] }
+            }
+        });
+        y = doc.lastAutoTable.finalY + 24;
+
+        /* Orçamento por faixa */
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(24, 24, 24);
+        doc.text(`Orçamento ${totals.essentialPct}/${totals.lifestylePct}/${totals.investmentPct}`, marginX, y);
+        y += 8;
+
+        const pctUsed = (spent, budget) => budget > 0 ? ((spent / budget) * 100).toFixed(1) + '%' : '0%';
+        doc.autoTable({
+            startY: y,
+            margin: { left: marginX, right: marginX },
+            head: [['Faixa', 'Gasto', 'Orçamento', '% Utilizado']],
+            body: [
+                [`Essencial (${totals.essentialPct}%)`, fmt(totals.essentialSpent), fmt(totals.essentialBudget), pctUsed(totals.essentialSpent, totals.essentialBudget)],
+                [`Estilo de Vida (${totals.lifestylePct}%)`, fmt(totals.lifestyleSpent), fmt(totals.lifestyleBudget), pctUsed(totals.lifestyleSpent, totals.lifestyleBudget)],
+                [`Investimento (${totals.investmentPct}%)`, fmt(totals.investmentSpent), fmt(totals.investmentBudget), pctUsed(totals.investmentSpent, totals.investmentBudget)]
+            ],
+            theme: 'striped',
+            headStyles: { fillColor: [24, 24, 24] },
+            styles: { fontSize: 10 }
+        });
+        y = doc.lastAutoTable.finalY + 24;
+
+        /* Transações */
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(24, 24, 24);
+        doc.text('Transações', marginX, y);
+        y += 8;
+
+        const sorted = [...monthData.transactions].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        const body = sorted.map(t => [
+            t.date ? t.date.split('-').reverse().join('/') : '—',
+            CATEGORY_LABELS[t.category] || t.category || '',
+            t.description || '',
+            PAYMENT_LABELS[t.paymentMethod] || t.paymentMethod || '',
+            fmt(Math.abs(parseFloat(t.value) || 0)),
+            t.status === 'pago' ? 'Pago' : 'Pendente'
+        ]);
+
+        doc.autoTable({
+            startY: y,
+            margin: { left: marginX, right: marginX },
+            head: [['Data', 'Categoria', 'Descrição', 'Pagamento', 'Valor', 'Status']],
+            body,
+            theme: 'striped',
+            headStyles: { fillColor: [24, 24, 24] },
+            styles: { fontSize: 9 },
+            didParseCell: (data) => {
+                if (data.section === 'body' && data.column.index === 5) {
+                    data.cell.styles.textColor = data.cell.raw === 'Pago' ? [56, 150, 100] : [200, 130, 40];
+                    data.cell.styles.fontStyle = 'bold';
+                }
+            }
+        });
+
+        /* Rodapé com paginação */
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(160, 160, 160);
+            doc.text(`Gerado por Fluxy — página ${i} de ${pageCount}`, marginX, doc.internal.pageSize.getHeight() - 20);
+        }
+
+        doc.save(`relatorio-fluxy-${monthKey}.pdf`);
+    }
+
+    return { downloadSpreadsheet, exportPDF };
 })();

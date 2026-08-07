@@ -22,6 +22,7 @@ const Charts = (() => {
     };
 
     let _donutRAF = null;
+    let _trendRAF = null;
 
     /* ---- helpers ---- */
     function fmt(v) {
@@ -133,14 +134,14 @@ const Charts = (() => {
             });
     }
 
-    /* =========== BUDGET BARS (50 / 30 / 20) =========== */
+    /* =========== BUDGET BARS (faixas editáveis) =========== */
     function renderBudgetBars(container, totals) {
         if (!container) return;
 
         const bars = [
-            { label: 'Essencial',       sub: '50%', icon: '🏠', spent: totals.essentialSpent,  budget: totals.essentialBudget,  color: '#c4864a', grad: 'linear-gradient(90deg,#c4864a,#e3a53d)' },
-            { label: 'Estilo de Vida',  sub: '30%', icon: '🎯', spent: totals.lifestyleSpent,  budget: totals.lifestyleBudget,  color: '#9b7fb5', grad: 'linear-gradient(90deg,#9b7fb5,#b79bcb)' },
-            { label: 'Investimento',    sub: '20%', icon: '📈', spent: totals.investmentSpent, budget: totals.investmentBudget, color: '#4fb286', grad: 'linear-gradient(90deg,#4fb286,#7bd1a8)' }
+            { key: 'essencial',       label: 'Essencial',       sub: `${totals.essentialPct}%`,  icon: '🏠', spent: totals.essentialSpent,  budget: totals.essentialBudget,  color: '#c4864a', grad: 'linear-gradient(90deg,#c4864a,#e3a53d)' },
+            { key: 'estilo-de-vida',  label: 'Estilo de Vida',  sub: `${totals.lifestylePct}%`,  icon: '🎯', spent: totals.lifestyleSpent,  budget: totals.lifestyleBudget,  color: '#9b7fb5', grad: 'linear-gradient(90deg,#9b7fb5,#b79bcb)' },
+            { key: 'investimento',    label: 'Investimento',    sub: `${totals.investmentPct}%`, icon: '📈', spent: totals.investmentSpent, budget: totals.investmentBudget, color: '#4fb286', grad: 'linear-gradient(90deg,#4fb286,#7bd1a8)' }
         ];
 
         container.innerHTML = bars.map(b => {
@@ -149,7 +150,7 @@ const Charts = (() => {
             const usedPct = b.budget > 0 ? ((b.spent / b.budget) * 100).toFixed(0) : '0';
 
             return `
-            <div class="budget-item">
+            <div class="budget-item" data-budget-key="${b.key}">
                 <div class="budget-header">
                     <div class="budget-title">
                         <span class="budget-dot" style="background:${b.color}"></span>
@@ -164,7 +165,7 @@ const Charts = (() => {
                 </div>
                 <div class="budget-track">
                     <div class="budget-fill ${over ? 'over' : ''}"
-                         style="--tw:${Math.min(pct, 100)}%; background:${over ? 'linear-gradient(90deg,#c4573f,#e28368)' : b.grad}"</div>
+                         style="--tw:${Math.min(pct, 100)}%; background:${over ? 'linear-gradient(90deg,#c4573f,#e28368)' : b.grad}"></div>
                 </div>
                 <div class="budget-footer">
                     <span class="${over ? 'over' : ''}">${usedPct}% utilizado</span>
@@ -181,5 +182,96 @@ const Charts = (() => {
         });
     }
 
-    return { renderDonut, renderLegend, renderBudgetBars, CATEGORY_COLORS, CATEGORY_LABELS };
+    /* =========== TREND CHART (últimos meses) ===========
+       Área + linha suave animada mostrando a evolução do saldo mês a
+       mês. Meses sem nenhum lançamento entram como 0 — mantém sempre
+       o mesmo número de pontos (mais previsível que "pular" meses
+       vazios) e ainda deixa claro visualmente que não teve movimento. */
+    function renderTrend(canvas, values) {
+        if (!canvas) return;
+        const ctx  = canvas.getContext('2d');
+        const dpr  = window.devicePixelRatio || 1;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const w = rect.width;
+        const h = 150;
+
+        canvas.width  = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width  = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.scale(dpr, dpr);
+
+        if (!values || values.length < 2) {
+            ctx.clearRect(0, 0, w, h);
+            return;
+        }
+
+        const padX = 6, padTop = 18, padBottom = 10;
+        const min = Math.min(0, ...values);
+        const max = Math.max(...values, 1);
+        const span = (max - min) || 1;
+        const usableW = w - padX * 2;
+        const usableH = h - padTop - padBottom;
+        const stepX = usableW / (values.length - 1);
+
+        const xy = values.map((v, i) => [
+            padX + i * stepX,
+            padTop + usableH - ((v - min) / span) * usableH
+        ]);
+        const zeroY = padTop + usableH - ((0 - min) / span) * usableH;
+
+        if (_trendRAF) cancelAnimationFrame(_trendRAF);
+        const t0 = performance.now();
+        const dur = 900;
+
+        (function frame(now) {
+            const p = Math.min((now - t0) / dur, 1);
+            const e = easeOut(p);
+            const visibleCount = Math.max(2, Math.ceil(xy.length * e));
+            const visible = xy.slice(0, visibleCount);
+
+            ctx.clearRect(0, 0, w, h);
+
+            /* linha do zero, discreta */
+            ctx.strokeStyle = 'rgba(243,239,230,0.08)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(padX, zeroY);
+            ctx.lineTo(w - padX, zeroY);
+            ctx.stroke();
+
+            /* área preenchida com degradê */
+            const grad = ctx.createLinearGradient(0, padTop, 0, h);
+            grad.addColorStop(0, 'rgba(227,165,61,0.28)');
+            grad.addColorStop(1, 'rgba(227,165,61,0)');
+            ctx.beginPath();
+            ctx.moveTo(visible[0][0], zeroY);
+            visible.forEach(([x, y]) => ctx.lineTo(x, y));
+            ctx.lineTo(visible[visible.length - 1][0], zeroY);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            /* linha */
+            ctx.beginPath();
+            visible.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+            ctx.strokeStyle = '#ffcf7a';
+            ctx.lineWidth = 2.4;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            /* pontinhos, com o último em destaque */
+            visible.forEach(([x, y], i) => {
+                ctx.beginPath();
+                ctx.arc(x, y, i === visible.length - 1 ? 3.6 : 2.2, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffcf7a';
+                ctx.fill();
+            });
+
+            if (p < 1) _trendRAF = requestAnimationFrame(frame);
+        })(t0);
+    }
+
+    return { renderDonut, renderLegend, renderBudgetBars, renderTrend, CATEGORY_COLORS, CATEGORY_LABELS };
 })();

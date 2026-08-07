@@ -7,11 +7,14 @@ const App = (() => {
     let currentMonthKey = Storage.getCurrentMonthKey();
     let currentMonthData = { salaries: [], transactions: [] }; // cache do mês atual (evita refetch a cada clique)
     let editingTransactionId = null;
-    let deletingType = null;   // 'transaction' | 'salary'
+    let deletingType = null;   // 'transaction' | 'salary' | 'goal'
     let deletingId = null;
     let filterCategory = '';
     let filterStatus = '';
     let renderSeq = 0; // ver renderAll(): descarta respostas de rede que chegam fora de ordem
+    let contributingGoalId = null;
+    let contributingGoalCurrent = 0;
+    const recurringCheckedMonths = new Set(); // evita rechecar recorrências toda hora, só 1x por mês/sessão
 
     /* ---------- Label maps ---------- */
     const CATEGORY_LABELS = {
@@ -228,7 +231,7 @@ const App = (() => {
             <tr data-id="${t.id}">
                 <td data-label="Data">${formatDate(t.date)}</td>
                 <td data-label="Categoria"><span class="category-badge ${t.category}">${CATEGORY_LABELS[t.category] || t.category}</span></td>
-                <td data-label="Descrição">${t.description || '—'}</td>
+                <td data-label="Descrição">${t.description || '—'}${t.recorrente ? ' <span class="recurring-badge" title="Transação recorrente">🔁</span>' : ''}</td>
                 <td data-label="Pagamento">
                     <span class="payment-badge">
                         <span class="pay-icon">${PAYMENT_ICONS[t.paymentMethod] || '💳'}</span>
@@ -344,6 +347,129 @@ const App = (() => {
         paintSparkline('spark-income', buildSparklinePoints(incomeVals));
         paintSparkline('spark-spent', buildSparklinePoints(spentVals));
         paintSparkline('spark-remaining', buildSparklinePoints(remainingVals));
+
+        /* Gráfico de tendência — reaproveita o mesmo allData já buscado
+           acima pra não fazer uma segunda ida ao banco. Meses sem
+           nenhum lançamento entram como saldo 0, pra manter sempre os
+           mesmos 6 pontos no eixo. */
+        const trendVals = keys.map(key => allData[key] ? Storage.calculateTotals(allData[key]).remaining : 0);
+        Charts.renderTrend($('chart-trend'), trendVals);
+
+        const labelsEl = $('trend-labels');
+        if (labelsEl) {
+            labelsEl.innerHTML = keys.map(key => {
+                const { month } = Storage.parseMonthKey(key);
+                return `<span>${Storage.MONTHS_PT[month].slice(0, 3)}</span>`;
+            }).join('');
+        }
+    }
+
+    /* ============================
+       RENDER — Classificação 50/30/20 (rótulos dinâmicos)
+       O usuário pode personalizar a divisão do orçamento, então os
+       rótulos "(50%)" fixos no HTML/JS viram texto gerado a partir do
+       totals calculado — atualiza o <select> do formulário e o título
+       do card de orçamento toda vez que os totais são recalculados.
+       ============================ */
+    function applyClassificationLabels(totals) {
+        CLASS_LABELS.essencial = `Essencial (${totals.essentialPct}%)`;
+        CLASS_LABELS['estilo-de-vida'] = `Estilo de Vida (${totals.lifestylePct}%)`;
+        CLASS_LABELS.investimento = `Investimento (${totals.investmentPct}%)`;
+
+        const sel = $('field-classification');
+        if (sel) {
+            const essOpt = sel.querySelector('option[value="essencial"]');
+            const lifeOpt = sel.querySelector('option[value="estilo-de-vida"]');
+            const invOpt = sel.querySelector('option[value="investimento"]');
+            if (essOpt) essOpt.textContent = CLASS_LABELS.essencial;
+            if (lifeOpt) lifeOpt.textContent = CLASS_LABELS['estilo-de-vida'];
+            if (invOpt) invOpt.textContent = CLASS_LABELS.investimento;
+        }
+
+        const splitLabel = $('budget-split-label');
+        if (splitLabel) splitLabel.textContent = `${totals.essentialPct}/${totals.lifestylePct}/${totals.investmentPct}`;
+    }
+
+    /* ============================
+       RENDER — Alerta de estouro de orçamento
+       Dispara um toast (uma vez por mês/faixa/sessão, via
+       sessionStorage) e um pulso visual na barra correspondente
+       quando uma faixa passa do orçamento.
+       ============================ */
+    function checkBudgetAlerts(totals, monthKey) {
+        const checks = [
+            { key: 'essencial',      label: 'Essencial',      spent: totals.essentialSpent,  budget: totals.essentialBudget },
+            { key: 'estilo-de-vida', label: 'Estilo de Vida',  spent: totals.lifestyleSpent,  budget: totals.lifestyleBudget },
+            { key: 'investimento',   label: 'Investimento',    spent: totals.investmentSpent, budget: totals.investmentBudget }
+        ];
+
+        checks.forEach(c => {
+            if (c.budget <= 0 || c.spent <= c.budget) return;
+
+            const flagKey = `fluxy:budgetAlert:${monthKey}:${c.key}`;
+            const el = document.querySelector(`.budget-item[data-budget-key="${c.key}"]`);
+
+            if (!sessionStorage.getItem(flagKey)) {
+                sessionStorage.setItem(flagKey, '1');
+                toast(`⚠ Orçamento de ${c.label} estourado neste mês!`, 'error');
+                if (el) {
+                    el.classList.add('budget-alert-pulse');
+                    setTimeout(() => el.classList.remove('budget-alert-pulse'), 1400);
+                }
+            }
+        });
+    }
+
+    /* ============================
+       RENDER — Metas de Economia
+       ============================ */
+    function renderGoalsList(goals) {
+        const grid = $('goals-grid');
+        if (!grid) return;
+
+        if (!goals || goals.length === 0) {
+            grid.innerHTML = `
+                <div class="goals-empty">
+                    <span class="empty-icon">🎯</span>
+                    Nenhuma meta criada ainda.<br>
+                    <small style="color:var(--paper-dim)">Crie uma meta e acompanhe sua evolução aqui.</small>
+                </div>`;
+            return;
+        }
+
+        grid.innerHTML = goals.map(g => {
+            const pct = g.target > 0 ? Math.min((g.current / g.target) * 100, 100) : 0;
+            const done = g.target > 0 && g.current >= g.target;
+            return `
+            <div class="goal-card ${done ? 'is-done' : ''}" data-id="${g.id}">
+                <div class="goal-card-top">
+                    <span class="goal-dot" style="background:${g.color}"></span>
+                    <span class="goal-name">${g.name}</span>
+                    <button class="btn-icon delete" data-delete-goal="${g.id}" title="Excluir meta">🗑️</button>
+                </div>
+                <div class="goal-values">
+                    <span class="goal-current">${fmt(g.current)}</span>
+                    <span class="goal-target">de ${fmt(g.target)}</span>
+                </div>
+                <div class="goal-track">
+                    <div class="goal-fill" style="--tw:${pct}%; background:linear-gradient(90deg, ${g.color}, ${g.color}cc)"></div>
+                </div>
+                <div class="goal-footer">
+                    <span>${pct.toFixed(0)}% concluído</span>
+                    ${done
+                        ? '<span class="goal-done-badge">🎉 Concluída!</span>'
+                        : `<button type="button" class="btn-text" data-contribute-goal="${g.id}" data-goal-current="${g.current}">+ Adicionar valor</button>`}
+                </div>
+            </div>`;
+        }).join('');
+
+        /* Scramble nos valores + animação de preenchimento da barra */
+        grid.querySelectorAll('.goal-current, .goal-target').forEach(el => scrambleText(el, el.textContent));
+        requestAnimationFrame(() => {
+            grid.querySelectorAll('.goal-fill').forEach(el => {
+                el.style.width = el.style.getPropertyValue('--tw');
+            });
+        });
     }
 
     /* ============================
@@ -358,11 +484,20 @@ const App = (() => {
            Isso era a causa dos valores errados ao trocar de mês. */
         const seq = ++renderSeq;
 
+        /* Clona transações recorrentes do mês anterior pra este mês,
+           se ainda não tiver feito isso nesta sessão. */
+        if (!recurringCheckedMonths.has(currentMonthKey)) {
+            recurringCheckedMonths.add(currentMonthKey);
+            await Storage.ensureRecurringForMonth(currentMonthKey);
+            if (seq !== renderSeq) return;
+        }
+
         const monthData = await Storage.getMonthData(currentMonthKey);
         if (seq !== renderSeq) return; // uma navegação mais nova já está em andamento
 
         currentMonthData = monthData;
         const totals = Storage.calculateTotals(monthData);
+        applyClassificationLabels(totals);
 
         /* Month display */
         $('month-display').textContent = Storage.getMonthName(currentMonthKey);
@@ -377,6 +512,12 @@ const App = (() => {
         Charts.renderDonut($('chart-donut'), totals.categoryBreakdown, totals.totalSpent);
         Charts.renderLegend($('chart-legend'), totals.categoryBreakdown, totals.totalSpent);
         Charts.renderBudgetBars($('budget-bars'), totals);
+        checkBudgetAlerts(totals, currentMonthKey);
+
+        /* Metas de economia */
+        const goals = await Storage.getGoals();
+        if (seq !== renderSeq) return;
+        renderGoalsList(goals);
 
         /* Salaries */
         renderSalaries(monthData);
@@ -486,6 +627,7 @@ const App = (() => {
         $('field-classification').value = tx.classification || 'essencial';
         $('field-value').value = formatToCurrencyString(parseFloat(tx.value) || 0);
         $('field-status').value = tx.status || 'pendente';
+        $('field-recurring').checked = !!tx.recorrente;
 
         openModal('transaction-modal');
     }
@@ -500,7 +642,8 @@ const App = (() => {
             paymentMethod:  $('field-payment').value,
             classification: $('field-classification').value,
             value:          parseCurrency($('field-value').value),
-            status:         $('field-status').value
+            status:         $('field-status').value,
+            recorrente:     $('field-recurring').checked
         };
 
         const result = editingTransactionId
@@ -558,6 +701,9 @@ const App = (() => {
         } else if (deletingType === 'salary' && deletingId) {
             result = await Storage.deleteSalary(currentMonthKey, deletingId);
             if (result.ok) toast('Renda removida!', 'info');
+        } else if (deletingType === 'goal' && deletingId) {
+            result = await Storage.deleteGoal(deletingId);
+            if (result.ok) toast('Meta removida!', 'info');
         }
         if (result && !result.ok) {
             toast(`Erro ao excluir: ${result.error || 'tente novamente.'}`, 'error');
@@ -575,6 +721,89 @@ const App = (() => {
         renderTransactions(currentMonthData);
     }
 
+    /* -- Metas de economia -- */
+    function onAddGoal() {
+        $('goal-form').reset();
+        $('goal-color').value = '#e3a53d';
+        openModal('goal-modal');
+    }
+
+    async function onGoalSubmit(e) {
+        e.preventDefault();
+        const name = $('goal-name').value.trim();
+        const target = parseCurrency($('goal-target').value);
+        const color = $('goal-color').value;
+        if (!name || !target) return;
+
+        const result = await Storage.addGoal({ name, target, current: 0, color });
+        if (!result.ok) {
+            toast(`Erro ao criar meta: ${result.error || 'tente novamente.'}`, 'error');
+            return;
+        }
+        closeModal('goal-modal');
+        toast('Meta criada! 🎯');
+        await renderAll();
+    }
+
+    function onOpenContribution(goalId, currentValue) {
+        contributingGoalId = goalId;
+        contributingGoalCurrent = parseFloat(currentValue) || 0;
+        $('contribution-form').reset();
+        openModal('contribution-modal');
+    }
+
+    async function onContributionSubmit(e) {
+        e.preventDefault();
+        const amount = parseCurrency($('contribution-value').value);
+        if (!amount || !contributingGoalId) return;
+
+        const result = await Storage.contributeToGoal(contributingGoalId, amount, contributingGoalCurrent);
+        if (!result.ok) {
+            toast(`Erro ao atualizar meta: ${result.error || 'tente novamente.'}`, 'error');
+            return;
+        }
+        closeModal('contribution-modal');
+        toast('Valor adicionado à meta! 💰');
+        contributingGoalId = null;
+        await renderAll();
+    }
+
+    /* -- Orçamento personalizado (50/30/20 editável) -- */
+    function updateSplitTotal() {
+        const total = (parseInt($('split-essential').value) || 0)
+                    + (parseInt($('split-lifestyle').value) || 0)
+                    + (parseInt($('split-investment').value) || 0);
+        const el = $('split-total');
+        el.textContent = `Total: ${total}%`;
+        el.classList.toggle('is-invalid', total !== 100);
+    }
+
+    function onOpenBudgetSplit() {
+        const split = Storage.getBudgetSplit();
+        $('split-essential').value = split.essential;
+        $('split-lifestyle').value = split.lifestyle;
+        $('split-investment').value = split.investment;
+        updateSplitTotal();
+        openModal('budget-split-modal');
+    }
+
+    function onBudgetSplitSubmit(e) {
+        e.preventDefault();
+        const essential  = parseInt($('split-essential').value) || 0;
+        const lifestyle  = parseInt($('split-lifestyle').value) || 0;
+        const investment = parseInt($('split-investment').value) || 0;
+
+        if (essential + lifestyle + investment !== 100) {
+            toast('A soma das 3 faixas precisa dar 100%.', 'error');
+            return;
+        }
+
+        Storage.setBudgetSplit({ essential, lifestyle, investment });
+        closeModal('budget-split-modal');
+        toast('Orçamento personalizado! 🎯');
+        renderAll();
+    }
+
     /* -- Export -- */
     function onDownload() {
         const monthData = currentMonthData;
@@ -584,6 +813,17 @@ const App = (() => {
         }
         ExportModule.downloadSpreadsheet(monthData, currentMonthKey);
         toast('Planilha exportada com sucesso! 📥');
+    }
+
+    function onExportPDF() {
+        const monthData = currentMonthData;
+        if (monthData.salaries.length === 0 && monthData.transactions.length === 0) {
+            toast('Nenhum dado para exportar neste mês.', 'error');
+            return;
+        }
+        const totals = Storage.calculateTotals(monthData);
+        ExportModule.exportPDF(monthData, totals, currentMonthKey, Storage.getMonthName(currentMonthKey));
+        toast('Relatório PDF gerado! 📄');
     }
 
     /* -- Import -- */
@@ -778,6 +1018,18 @@ const App = (() => {
                 onRequestDelete('salary', delSal.dataset.deleteSalary);
                 return;
             }
+
+            const contribBtn = e.target.closest('[data-contribute-goal]');
+            if (contribBtn) {
+                onOpenContribution(contribBtn.dataset.contributeGoal, contribBtn.dataset.goalCurrent);
+                return;
+            }
+
+            const delGoal = e.target.closest('[data-delete-goal]');
+            if (delGoal) {
+                onRequestDelete('goal', delGoal.dataset.deleteGoal);
+                return;
+            }
         });
 
         /* Close modals on overlay click */
@@ -819,6 +1071,29 @@ const App = (() => {
         $('delete-cancel').addEventListener('click', () => { closeModal('delete-modal'); deletingType = null; deletingId = null; });
         $('delete-confirm').addEventListener('click', onConfirmDelete);
 
+        /* Goal modal */
+        $('add-goal-btn').addEventListener('click', onAddGoal);
+        $('goal-form').addEventListener('submit', onGoalSubmit);
+        $('modal-close-goal').addEventListener('click', () => closeModal('goal-modal'));
+        $('modal-cancel-goal').addEventListener('click', () => closeModal('goal-modal'));
+
+        /* Contribution modal */
+        $('contribution-form').addEventListener('submit', onContributionSubmit);
+        $('modal-close-contrib').addEventListener('click', () => closeModal('contribution-modal'));
+        $('modal-cancel-contrib').addEventListener('click', () => closeModal('contribution-modal'));
+
+        /* Budget split modal */
+        $('edit-budget-split-btn').addEventListener('click', onOpenBudgetSplit);
+        $('budget-split-form').addEventListener('submit', onBudgetSplitSubmit);
+        $('modal-close-split').addEventListener('click', () => closeModal('budget-split-modal'));
+        $('modal-cancel-split').addEventListener('click', () => closeModal('budget-split-modal'));
+        ['split-essential', 'split-lifestyle', 'split-investment'].forEach(id => {
+            $(id).addEventListener('input', updateSplitTotal);
+        });
+
+        /* Export PDF */
+        $('export-pdf-btn').addEventListener('click', onExportPDF);
+
         /* Filters */
         $('filter-category').addEventListener('change', onFilterChange);
         $('filter-status').addEventListener('change', onFilterChange);
@@ -845,6 +1120,8 @@ const App = (() => {
         /* Setup currency masks */
         setupCurrencyMask($('salary-value'));
         setupCurrencyMask($('field-value'));
+        setupCurrencyMask($('goal-target'));
+        setupCurrencyMask($('contribution-value'));
 
         /* Initial render */
         await renderAll();

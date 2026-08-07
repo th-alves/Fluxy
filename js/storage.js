@@ -69,6 +69,30 @@ const Storage = (() => {
         return { start, end };
     }
 
+    /* ---------- Configurações locais (não vão pro Supabase) ----------
+       A divisão do orçamento (essencial/estilo de vida/investimento)
+       é só uma preferência de como o usuário quer fatiar a própria
+       renda — não é um dado financeiro em si, então fica salva no
+       localStorage do navegador em vez de virar mais uma tabela. */
+    const BUDGET_SPLIT_KEY = 'fluxy:budgetSplit';
+    const DEFAULT_SPLIT = { essential: 50, lifestyle: 30, investment: 20 };
+
+    function getBudgetSplit() {
+        try {
+            const raw = localStorage.getItem(BUDGET_SPLIT_KEY);
+            if (!raw) return { ...DEFAULT_SPLIT };
+            const parsed = JSON.parse(raw);
+            const sum = (parsed.essential || 0) + (parsed.lifestyle || 0) + (parsed.investment || 0);
+            return sum === 100 ? parsed : { ...DEFAULT_SPLIT };
+        } catch {
+            return { ...DEFAULT_SPLIT };
+        }
+    }
+
+    function setBudgetSplit(split) {
+        localStorage.setItem(BUDGET_SPLIT_KEY, JSON.stringify(split));
+    }
+
     /* ---------- Sessão / usuário ---------- */
     async function getUserId() {
         const { data, error } = await supabaseClient.auth.getUser();
@@ -136,7 +160,18 @@ const Storage = (() => {
             paymentMethod: row.forma_pagamento || 'pix',
             classification: row.classificacao || 'essencial',
             value: parseFloat(row.valor) || 0,
-            status: row.status
+            status: row.status,
+            recorrente: !!row.recorrente
+        };
+    }
+
+    function rowToGoal(row) {
+        return {
+            id: row.id,
+            name: row.nome,
+            target: parseFloat(row.valor_alvo) || 0,
+            current: parseFloat(row.valor_atual) || 0,
+            color: row.cor || '#e3a53d'
         };
     }
 
@@ -253,6 +288,7 @@ const Storage = (() => {
             classificacao: tx.classification,
             vencimento: tx.date,
             status: tx.status,
+            recorrente: !!tx.recorrente,
             mes_referencia: `${year}-${String(month + 1).padStart(2, '0')}-01`
         });
         if (error) { console.error('Erro ao adicionar transação:', error); return { ok: false, error: error.message }; }
@@ -269,6 +305,7 @@ const Storage = (() => {
         if (updates.classification !== undefined) patch.classificacao = updates.classification;
         if (updates.date !== undefined) patch.vencimento = updates.date;
         if (updates.status !== undefined) patch.status = updates.status;
+        if (updates.recorrente !== undefined) patch.recorrente = !!updates.recorrente;
 
         const { error } = await supabaseClient.from('entries').update(patch).eq('id', txId);
         if (error) { console.error('Erro ao atualizar transação:', error); return { ok: false, error: error.message }; }
@@ -278,6 +315,103 @@ const Storage = (() => {
     async function deleteTransaction(_monthKey, txId) {
         const { error } = await supabaseClient.from('entries').delete().eq('id', txId);
         if (error) { console.error('Erro ao excluir transação:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
+    }
+
+    /* ---------- Transações recorrentes ----------
+       Ao entrar num mês, procura no mês anterior os lançamentos
+       marcados como recorrentes e clona pro mês atual os que ainda
+       não existem por lá (checando nome+categoria pra não duplicar
+       se o usuário já tiver adicionado manualmente ou clonado antes).
+       Se a coluna `recorrente` ainda não existir no banco (migração
+       não rodada), a query falha e a função só sai de mansinho —
+       o resto do app continua funcionando normalmente. */
+    function shiftDateToMonth(dateStr, monthKey) {
+        const { year, month } = parseMonthKey(monthKey);
+        const day = dateStr ? dateStr.split('-')[2] : '01';
+        return `${year}-${String(month + 1).padStart(2, '0')}-${day}`;
+    }
+
+    async function ensureRecurringForMonth(monthKey) {
+        const userId = await getUserId();
+        if (!userId) return;
+        await ensureCategories();
+
+        const prevKey = navigateMonth(monthKey, -1);
+        const { start, end } = monthRange(prevKey);
+
+        const { data: prevRows, error } = await supabaseClient
+            .from('entries').select('*')
+            .eq('user_id', userId)
+            .eq('natureza', 'despesa')
+            .eq('recorrente', true)
+            .gte('mes_referencia', start)
+            .lt('mes_referencia', end);
+
+        if (error || !prevRows || prevRows.length === 0) return;
+
+        const curData = await getMonthData(monthKey);
+        const existing = new Set(curData.transactions.map(t => `${t.description}|${t.category}`));
+
+        for (const row of prevRows) {
+            const slug = categorySlugById(row.categoria_id);
+            const key = `${row.nome}|${slug}`;
+            if (existing.has(key)) continue;
+
+            await addTransaction(monthKey, {
+                date: shiftDateToMonth(row.vencimento, monthKey),
+                category: slug,
+                description: row.nome,
+                paymentMethod: row.forma_pagamento || 'pix',
+                classification: row.classificacao || 'essencial',
+                value: parseFloat(row.valor) || 0,
+                status: 'pendente',
+                recorrente: true
+            });
+        }
+    }
+
+    /* ---------- Metas de economia ---------- */
+    async function getGoals() {
+        const userId = await getUserId();
+        if (!userId) return [];
+        try {
+            const { data, error } = await supabaseClient
+                .from('goals').select('*')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: true });
+            if (error) { console.error('Erro ao buscar metas:', error); return []; }
+            return (data || []).map(rowToGoal);
+        } catch (e) {
+            console.error('Erro ao buscar metas:', e);
+            return [];
+        }
+    }
+
+    async function addGoal(goal) {
+        const userId = await getUserId();
+        if (!userId) return { ok: false, error: 'Usuário não autenticado.' };
+        const { error } = await supabaseClient.from('goals').insert({
+            user_id: userId,
+            nome: goal.name,
+            valor_alvo: goal.target,
+            valor_atual: goal.current || 0,
+            cor: goal.color || '#e3a53d'
+        });
+        if (error) { console.error('Erro ao criar meta:', error); return { ok: false, error: error.message }; }
+        return { ok: true };
+    }
+
+    async function contributeToGoal(goalId, amount, currentValue) {
+        const newValue = Math.max(0, (parseFloat(currentValue) || 0) + amount);
+        const { error } = await supabaseClient.from('goals').update({ valor_atual: newValue }).eq('id', goalId);
+        if (error) { console.error('Erro ao atualizar meta:', error); return { ok: false, error: error.message }; }
+        return { ok: true, newValue };
+    }
+
+    async function deleteGoal(goalId) {
+        const { error } = await supabaseClient.from('goals').delete().eq('id', goalId);
+        if (error) { console.error('Erro ao excluir meta:', error); return { ok: false, error: error.message }; }
         return { ok: true };
     }
 
@@ -300,7 +434,9 @@ const Storage = (() => {
     }
 
     /* ---------- Financial Calculations (puro, sem rede) ---------- */
-    function calculateTotals(monthData) {
+    function calculateTotals(monthData, split) {
+        const s = split || getBudgetSplit();
+
         const totalIncome = monthData.salaries
             .reduce((s, sal) => s + (parseFloat(sal.value) || 0), 0);
 
@@ -311,7 +447,7 @@ const Storage = (() => {
         const totalPending = pend.reduce((s, t) => s + Math.abs(parseFloat(t.value) || 0), 0);
         const remaining    = totalIncome - totalSpent;
 
-        /* 50 / 30 / 20 */
+        /* Faixas de orçamento (editáveis pelo usuário — ver getBudgetSplit) */
         const essentialSpent = paid
             .filter(t => t.classification === 'essencial')
             .reduce((s, t) => s + Math.abs(parseFloat(t.value) || 0), 0);
@@ -337,9 +473,12 @@ const Storage = (() => {
             essentialSpent,
             lifestyleSpent,
             investmentSpent,
-            essentialBudget:  totalIncome * 0.5,
-            lifestyleBudget:  totalIncome * 0.3,
-            investmentBudget: totalIncome * 0.2,
+            essentialBudget:  totalIncome * (s.essential  / 100),
+            lifestyleBudget:  totalIncome * (s.lifestyle  / 100),
+            investmentBudget: totalIncome * (s.investment / 100),
+            essentialPct:  s.essential,
+            lifestylePct:  s.lifestyle,
+            investmentPct: s.investment,
             categoryBreakdown
         };
     }
@@ -359,10 +498,17 @@ const Storage = (() => {
         addTransaction,
         updateTransaction,
         deleteTransaction,
+        ensureRecurringForMonth,
+        getGoals,
+        addGoal,
+        contributeToGoal,
+        deleteGoal,
         clearMonth,
         bulkAdd,
         calculateTotals,
         ensureCategories,
+        getBudgetSplit,
+        setBudgetSplit,
         MONTHS_PT
     };
 })();
